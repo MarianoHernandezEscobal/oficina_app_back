@@ -3,9 +3,10 @@ export class CreateUserDto {
     email: string;
     password: string;
     createdAt: Date;
+    meta?: number;
 }
 
 export class CreateDiaOficinDto {
     email: string;
-    fechas: Date[];
+    fechas: string[];
 }

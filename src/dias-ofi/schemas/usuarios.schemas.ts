@@ -16,6 +16,9 @@ export class Usuario {
   @Prop()
   createdAt: Date;
 
+  @Prop()
+  meta: number;
+
 }
 
 export const UsuarioSchema = SchemaFactory.createForClass(Usuario);
