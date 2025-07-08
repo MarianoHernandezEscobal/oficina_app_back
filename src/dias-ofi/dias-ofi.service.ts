@@ -28,14 +28,14 @@ export class DiasOfiService {
     if (!usuario) {
       throw new Error('Usuario no encontrado');
     }
-  
+
     const meta = usuario.meta;
     const fechaObj = fecha ? new Date(fecha.split('T')[0]) : new Date();
     const mes = fechaObj.getMonth();
     const año = fechaObj.getFullYear();
-  
+
     const diasEnMes = new Date(año, mes + 1, 0).getDate();
-  
+
     let diasLaborables = 0;
     for (let dia = 1; dia <= diasEnMes; dia++) {
       const fechaDia = new Date(año, mes, dia);
@@ -44,22 +44,22 @@ export class DiasOfiService {
         diasLaborables++;
       }
     }
-  
+
     const diasOficina = Math.ceil(diasLaborables * (meta / 100));
-  
+
     const feriados = await this.feriadoModel.find({
       fecha: {
         $gte: new Date(año, mes, 1),
         $lt: new Date(año, mes + 1, 1),
       },
     }).exec();
-  
+
     const feriadosArray = feriados.map((feriado) => ({
       fecha: feriado.fecha,
       nombre: feriado.nombre,
       descripcion: feriado.descripcion,
     }));
-  
+
     const licencias = await this.licenciaModel.find({
       email,
       fechaInicio: {
@@ -69,25 +69,25 @@ export class DiasOfiService {
         $gte: new Date(año, mes, 1),
       },
     }).exec();
-  
+
     const licenciasArray = licencias.map((licencia) => ({
       fechaInicio: licencia.fechaInicio,
       fechaFin: licencia.fechaFin,
       dias: licencia.dias,
     }));
-  
+
     let diasLicencia = 0;
-  
+
     for (const licencia of licenciasArray) {
       let inicio = new Date(licencia.fechaInicio.getFullYear(), licencia.fechaInicio.getMonth(), licencia.fechaInicio.getDate());
       let fin = new Date(licencia.fechaFin.getFullYear(), licencia.fechaFin.getMonth(), licencia.fechaFin.getDate());
-  
+
       const inicioMes = new Date(año, mes, 1);
       const finMes = new Date(año, mes + 1, 0);
-  
+
       if (inicio < inicioMes) inicio = inicioMes;
       if (fin > finMes) fin = finMes;
-  
+
       let cursor = new Date(inicio);
       while (cursor <= fin) {
         const diaSemana = cursor.getDay();
@@ -97,7 +97,7 @@ export class DiasOfiService {
         cursor.setDate(cursor.getDate() + 1);
       }
     }
-  
+
     return {
       diasLicencia,
       diasEnMes,
@@ -108,7 +108,7 @@ export class DiasOfiService {
       año,
     };
   }
-  
+
 
   private generarToken(email: string) {
     return this.jwtService.sign({ user: email });
@@ -116,9 +116,9 @@ export class DiasOfiService {
 
   async createUser(createDiasOfiDto: CreateUserDto) {
     try {
-      const nuevo = new this.usuarioModel({ 
-        ...createDiasOfiDto, 
-        meta: createDiasOfiDto.meta || 60 
+      const nuevo = new this.usuarioModel({
+        ...createDiasOfiDto,
+        meta: createDiasOfiDto.meta || 60
       });
       const userNuevo = await nuevo.save();
       return { token: `Bearer ${this.generarToken(userNuevo.email)}` };
@@ -198,21 +198,36 @@ export class DiasOfiService {
   }
 
   async remove(fecha: string, email: string) {
-    const dia = await this.diaOficinModel.findOne({ email, fecha: { $gte: new Date(fecha), $lt: new Date(fecha) } });
-    if (!dia) {
-      throw new Error('Registro no encontrado');
+    try {
+      const fechaObj = new Date(fecha);
+      const año = fechaObj.getUTCFullYear();
+      const mes = fechaObj.getUTCMonth();
+      const dia = fechaObj.getUTCDate();
+      
+      const inicioDia = new Date(Date.UTC(año, mes, dia, 0, 0, 0, 0));
+      const finDia = new Date(Date.UTC(año, mes, dia + 1, 0, 0, 0, 0));
+      const diaOfi = await this.diaOficinModel.findOne({ email, fecha: { $gte: inicioDia, $lt: finDia } });
+      if (!diaOfi) {
+        throw new BadRequestException('Registro no encontrado');
+      }
+      if (diaOfi.email.toString() !== email) {
+        throw new BadRequestException('No tienes permiso para eliminar este registro');
+      }
+      return this.diaOficinModel.deleteOne({ email, fecha: { $gte: inicioDia, $lt: finDia } }).exec();
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      console.log(error);
+      throw new Error('Error al eliminar el dia');
     }
-    if (dia.email.toString() !== email) {
-      throw new Error('No tienes permiso para eliminar este registro');
-    }
-    return this.diaOficinModel.deleteOne({ email, fecha: { $gte: new Date(fecha), $lt: new Date(fecha) } }).exec();
   }
 
   async addFeriados(feriados: FeriadosDto[]) {
     const feriadosArray = feriados.map(feriado => {
       const [year, month, day] = feriado.fecha.split('-').map(Number);
       const fecha = new Date(year, month - 1, day, 12, 0, 0, 0);
-      
+
       return {
         fecha: fecha,
         nombre: feriado.nombre,
@@ -235,13 +250,13 @@ export class DiasOfiService {
     const fechaObj = fecha ? new Date(fecha) : new Date();
     const mes = fechaObj.getMonth();
     const año = fechaObj.getFullYear();
-    const licencias = await this.licenciaModel.find({ 
-      email, 
-      fechaInicio: { 
-        $gte: new Date(año, mes, 1), 
-        $lt: new Date(año, mes + 1, 1) 
-      } 
-    }).exec();    
+    const licencias = await this.licenciaModel.find({
+      email,
+      fechaInicio: {
+        $gte: new Date(año, mes, 1),
+        $lt: new Date(año, mes + 1, 1)
+      }
+    }).exec();
     return licencias;
   }
 
@@ -258,17 +273,21 @@ export class DiasOfiService {
       }
       fechaActual.setDate(fechaActual.getDate() + 1);
     }
-    
-    const feriados = await this.feriadoModel.find({ 
-      fecha: { $gte: fechaInicioDate, $lte: fechaFinDate } 
+
+    const feriados = await this.feriadoModel.find({
+      fecha: { $gte: fechaInicioDate, $lte: fechaFinDate }
     }).exec();
 
     const diasLaborablesFeriados = diasLaborables - feriados.length;
-    
+
     return {
       diasLaborables,
       dias: diasLaborablesFeriados,
       feriados: feriados.length,
     };
+  }
+
+  async removeLicencia(id: string, email: string) {
+    return this.licenciaModel.deleteOne({ _id: id, email }).exec();
   }
 }

@@ -72,6 +72,12 @@ export class DiasOfiController {
     return this.diasOfiService.getLicencias(req.user.email, fecha);
   }
 
+  @Delete('licencia')
+  @UseGuards(AuthGuard('jwt'))
+  async deleteLicencia(@Request() req, @Query('id') id: string) {
+    return this.diasOfiService.removeLicencia(id, req.user.email);
+  }
+
   @Get('dias-licencias')
   @UseGuards(AuthGuard('jwt'))
   async diasLaborables(@Request() req, @Query('fechaInicio') fechaInicio: string, @Query('fechaFin') fechaFin: string) {
