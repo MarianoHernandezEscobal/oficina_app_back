@@ -103,7 +103,8 @@ export class DiasOfiService {
       diasEnMes,
       diasLaborables,
       feriados: feriadosArray,
-      diasOficina: diasOficina - feriadosArray.length - diasLicencia,
+      diasPresencialidad: diasOficina,
+      diasCumplimiento: diasOficina - feriadosArray.length - diasLicencia,
       mes: mes + 1,
       año,
     };
