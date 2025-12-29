@@ -97,6 +97,15 @@ export class DiasOfiService {
         cursor.setDate(cursor.getDate() + 1);
       }
     }
+    
+    let feriadosLaborables = 0;
+    for (const feriado of feriadosArray) {
+      const fechaFeriado = new Date(feriado.fecha);
+      const diaSemana = fechaFeriado.getDay();
+      if (diaSemana >= 1 && diaSemana <= 5) {
+        feriadosLaborables++;
+      }
+    }
 
     return {
       diasLicencia,
@@ -104,12 +113,11 @@ export class DiasOfiService {
       diasLaborables,
       feriados: feriadosArray,
       diasPresencialidad: diasOficina,
-      diasCumplimiento: diasOficina - feriadosArray.length - diasLicencia,
+      diasCumplimiento: diasOficina - feriadosLaborables - diasLicencia,
       mes: mes + 1,
       año,
     };
   }
-
 
   private generarToken(email: string) {
     return this.jwtService.sign({ user: email });
