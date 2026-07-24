@@ -23,6 +23,13 @@ export class DiasOfiService {
     private jwtService: JwtService
   ) { }
 
+  /** Parsea YYYY-MM-DD en hora local (evita que UTC reste un día/mes). */
+  private parseFechaLocal(fecha: string): Date {
+    const datePart = fecha.split('T')[0];
+    const [year, month, day] = datePart.split('-').map(Number);
+    return new Date(year, month - 1, day, 12, 0, 0, 0);
+  }
+
   async diasMeta(fecha: string, email: string) {
     const usuario = await this.usuarioModel.findOne({ email });
     if (!usuario) {
@@ -30,7 +37,7 @@ export class DiasOfiService {
     }
 
     const meta = usuario.meta;
-    const fechaObj = fecha ? new Date(fecha.split('T')[0]) : new Date();
+    const fechaObj = fecha ? this.parseFechaLocal(fecha) : new Date();
     const mes = fechaObj.getMonth();
     const año = fechaObj.getFullYear();
 
@@ -60,10 +67,11 @@ export class DiasOfiService {
       descripcion: feriado.descripcion,
     }));
 
+    // Licencias que se solapan con el mes: inicio <= finMes && fin >= inicioMes
     const licencias = await this.licenciaModel.find({
       email,
       fechaInicio: {
-        $lte: new Date(año, mes + 1, 0),
+        $lte: new Date(año, mes + 1, 0, 23, 59, 59, 999),
       },
       fechaFin: {
         $gte: new Date(año, mes, 1),
@@ -97,7 +105,7 @@ export class DiasOfiService {
         cursor.setDate(cursor.getDate() + 1);
       }
     }
-    
+
     let feriadosLaborables = 0;
     for (const feriado of feriadosArray) {
       const fechaFeriado = new Date(feriado.fecha);
@@ -212,7 +220,7 @@ export class DiasOfiService {
       const año = fechaObj.getUTCFullYear();
       const mes = fechaObj.getUTCMonth();
       const dia = fechaObj.getUTCDate();
-      
+
       const inicioDia = new Date(Date.UTC(año, mes, dia, 0, 0, 0, 0));
       const finDia = new Date(Date.UTC(año, mes, dia + 1, 0, 0, 0, 0));
       const diaOfi = await this.diaOficinModel.findOne({ email, fecha: { $gte: inicioDia, $lt: finDia } });
@@ -250,21 +258,32 @@ export class DiasOfiService {
   async addLicencias(licencias: LicenciaDto, email: string) {
     await this.licenciaModel.insertOne({
       ...licencias,
+      fechaInicio: this.parseFechaLocal(licencias.fechaInicio),
+      fechaFin: this.parseFechaLocal(licencias.fechaFin),
       email: email
     });
     return { message: 'Licencias agregadas correctamente' };
   }
 
   async getLicencias(email: string, fecha: string) {
-    const fechaObj = fecha ? new Date(fecha) : new Date();
+    // Sin fecha: devolver todas las licencias del usuario
+    if (!fecha) {
+      return this.licenciaModel.find({ email }).exec();
+    }
+
+    const fechaObj = this.parseFechaLocal(fecha);
     const mes = fechaObj.getMonth();
     const año = fechaObj.getFullYear();
+
+    // Licencias que se solapan con el mes consultado
     const licencias = await this.licenciaModel.find({
       email,
       fechaInicio: {
+        $lte: new Date(año, mes + 1, 0, 23, 59, 59, 999),
+      },
+      fechaFin: {
         $gte: new Date(año, mes, 1),
-        $lt: new Date(año, mes + 1, 1)
-      }
+      },
     }).exec();
     return licencias;
   }
