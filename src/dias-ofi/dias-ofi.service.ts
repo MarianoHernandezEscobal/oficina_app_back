@@ -10,6 +10,7 @@ import { Feriado, FeriadoDocument } from './schemas/feriados.schema';
 import { FeriadosDto } from './dto/feriados.dto';
 import { LicenciaDto } from './dto/licencia.dto';
 import { Licencia, LicenciaDocument } from './schemas/licencias.schemas';
+import * as moment from 'moment-timezone';
 
 @Injectable()
 export class DiasOfiService {
@@ -25,10 +26,9 @@ export class DiasOfiService {
 
   /** Parsea YYYY-MM-DD en hora local (evita que UTC reste un día/mes). */
   private parseFechaLocal(fecha: string): Date {
-    const datePart = fecha.split('T')[0];
-    const [year, month, day] = datePart.split('-').map(Number);
-    return new Date(year, month - 1, day, 12, 0, 0, 0);
-  }
+  // Expecting YYYY-MM-DD format, interpret in Argentina timezone
+  return moment.tz(fecha, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').toDate();
+}
 
   async diasMeta(fecha: string, email: string) {
     const usuario = await this.usuarioModel.findOne({ email });
@@ -164,45 +164,53 @@ export class DiasOfiService {
     try {
       // Validar que no sea fin de semana para cada fecha en el array
       for (const fechaString of body.fechas) {
-        const fecha = new Date(fechaString);
+  
+        // Parsear la fecha como LOCAL (evita problemas de UTC)
+        const fecha = moment.tz(fechaString, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').toDate();
+        console.log(fecha);
         const diaSemana = fecha.getDay();
+        console.log(diaSemana);
         if (diaSemana === 0 || diaSemana === 6) {
-          throw new BadRequestException('No se puede registrar un día de fin de semana');
+          console.log('No se puede registrar un día de fin de semana');
+          throw new BadRequestException(
+            'No se puede registrar un día de fin de semana',
+          );
         }
-
-        // Obtener año, mes y día para la validación
-        const año = fecha.getFullYear();
-        const mes = fecha.getMonth();
-        const dia = fecha.getDate();
-
-        // Verificar si ya existe un registro para el mismo día, mes y año
+        console.log('No es fin de semana');
+        // Verificar si ya existe un registro para ese día
         const registroExistente = await this.diaOficinModel.findOne({
           email: body.email,
           fecha: {
-            $gte: new Date(año, mes, dia, 0, 0, 0, 0),
-            $lt: new Date(año, mes, dia + 1, 0, 0, 0, 0)
-          }
+            $gte: moment.tz(fechaString, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').startOf('day').toDate(),
+            $lt: moment.tz(fechaString, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').add(1, 'day').toDate(),
+          },
         });
-
+        console.log(registroExistente);
         if (registroExistente) {
-          throw new BadRequestException(`Ya existe un registro para el día ${dia}/${mes + 1}/${año}`);
+          throw new BadRequestException(
+            `Ya existe un registro para el día ${fechaString}`,
+          );
         }
       }
-
+  
       // Crear registros para todas las fechas
-      const registros = body.fechas.map(fecha => ({
+      const registros = body.fechas.map((fechaString) => ({
         email: body.email,
-        fecha: fecha
+        fecha: moment.tz(fechaString, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').toDate(),
       }));
-
+  
       await this.diaOficinModel.insertMany(registros);
-      return { message: 'Dias registrados correctamente' };
+  
+      return {
+        message: 'Días registrados correctamente',
+      };
     } catch (error) {
       if (error instanceof BadRequestException) {
         throw error;
       }
-      console.log(error);
-      throw new Error('Error al registrar el dia');
+  
+      console.error(error);
+      throw new Error('Error al registrar el día');
     }
   }
 
@@ -242,8 +250,7 @@ export class DiasOfiService {
 
   async addFeriados(feriados: FeriadosDto[]) {
     const feriadosArray = feriados.map(feriado => {
-      const [year, month, day] = feriado.fecha.split('-').map(Number);
-      const fecha = new Date(year, month - 1, day, 12, 0, 0, 0);
+      const fecha = moment.tz(feriado.fecha, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').toDate();
 
       return {
         fecha: fecha,
@@ -256,7 +263,7 @@ export class DiasOfiService {
   }
 
   async addLicencias(licencias: LicenciaDto, email: string) {
-    await this.licenciaModel.insertOne({
+    await this.licenciaModel.create({
       ...licencias,
       fechaInicio: this.parseFechaLocal(licencias.fechaInicio),
       fechaFin: this.parseFechaLocal(licencias.fechaFin),
@@ -289,8 +296,8 @@ export class DiasOfiService {
   }
 
   async calcularDiasLicencias(fechaInicio: string, fechaFin: string) {
-    const fechaInicioDate = new Date(fechaInicio + 'T00:00:00');
-    const fechaFinDate = new Date(fechaFin + 'T00:00:00');
+    const fechaInicioDate = moment.tz(fechaInicio, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').startOf('day').toDate();
+    const fechaFinDate = moment.tz(fechaFin, 'YYYY-MM-DD', 'America/Argentina/Buenos_Aires').endOf('day').toDate();
     let diasLaborables = 0;
 
     const fechaActual = new Date(fechaInicioDate);
